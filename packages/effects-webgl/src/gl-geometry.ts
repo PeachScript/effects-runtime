@@ -1,4 +1,4 @@
-import type { Engine, GeometryProps, SkinProps } from '@galacean/effects-core';
+import type { BinaryAsset, Engine, GeometryProps, SkinProps } from '@galacean/effects-core';
 import { spec, assertExist, BYTES_TYPE_MAP, generateEmptyTypedArray, Geometry, glContext, vertexFormatType2GLType } from '@galacean/effects-core';
 import type { GLEngine } from './gl-engine';
 import type { GLGPUBufferProps } from './gl-gpu-buffer';
@@ -409,9 +409,20 @@ export class GLGeometry extends Geometry {
 
   override fromData (data: spec.GeometryData): void {
     super.fromData(data);
-
     this.subMeshes = data.subMeshes;
-    const buffer = decodeBase64ToArrays(data.buffer);
+    let buffer: ArrayBuffer;
+    let baseOffset = 0;
+
+    if (data.buffer) {
+      buffer = decodeBase64ToArrays(data.buffer);
+    } else if (data.bufferAsset) {
+      buffer = (data.bufferAsset.buffer as unknown as BinaryAsset).buffer;
+      baseOffset = data.bufferAsset.offset;
+    } else {
+      console.error('GeometryData ' + this.guid + ' has no buffer data.');
+
+      return;
+    }
     const vertexCount = data.vertexData.vertexCount;
 
     if (this.hasSemantic(data)) {
@@ -422,7 +433,7 @@ export class GLGeometry extends Geometry {
 
       data.vertexData.channels.forEach(channel => {
         const attribName = vertexBufferSemanticMap[channel.semantic] ?? channel.semantic;
-        const attribBuffer = this.createVertexTypedArray(channel, buffer, vertexCount);
+        const attribBuffer = this.createVertexTypedArray(channel, buffer, vertexCount, baseOffset);
 
         geometryProps.attributes[attribName] = {
           type: vertexFormatType2GLType(channel.format),
@@ -433,7 +444,7 @@ export class GLGeometry extends Geometry {
       });
 
       if (data.indexFormat !== spec.IndexFormatType.None) {
-        const indexBuffer = this.createIndexTypedArray(data.indexFormat, buffer, data.indexOffset);
+        const indexBuffer = this.createIndexTypedArray(data.indexFormat, buffer, data.indexOffset + baseOffset);
 
         geometryProps.indices = { data: indexBuffer };
         geometryProps.drawCount = indexBuffer.length;
@@ -448,11 +459,11 @@ export class GLGeometry extends Geometry {
       const normalChannel = data.vertexData.channels[2];
 
       // 根据提供的长度信息创建 Float32Array
-      const positionBuffer = this.createVertexTypedArray(positionChannel, buffer, vertexCount);
-      const uvBuffer = this.createVertexTypedArray(uvChannel, buffer, vertexCount);
-      const normalBuffer = this.createVertexTypedArray(normalChannel, buffer, vertexCount);
+      const positionBuffer = this.createVertexTypedArray(positionChannel, buffer, vertexCount, baseOffset);
+      const uvBuffer = this.createVertexTypedArray(uvChannel, buffer, vertexCount, baseOffset);
+      const normalBuffer = this.createVertexTypedArray(normalChannel, buffer, vertexCount, baseOffset);
       // 根据提供的长度信息创建 Uint16Array，它紧随 Float32Array 数据之后
-      const indexBuffer = this.createIndexTypedArray(data.indexFormat, buffer, data.indexOffset);
+      const indexBuffer = this.createIndexTypedArray(data.indexFormat, buffer, data.indexOffset + baseOffset);
 
       const geometryProps: GeometryProps = {
         mode: glContext.TRIANGLES,
@@ -520,22 +531,24 @@ export class GLGeometry extends Geometry {
     this.destroyed = true;
   }
 
-  private createVertexTypedArray (channel: spec.VertexChannel, baseBuffer: ArrayBufferLike, vertexCount: number) {
+  private createVertexTypedArray (channel: spec.VertexChannel, baseBuffer: ArrayBufferLike, vertexCount: number, baseOffset: number) {
+    const offset = channel.offset + baseOffset;
+
     switch (channel.format) {
       case spec.VertexFormatType.Float32:
-        return new Float32Array(baseBuffer, channel.offset, channel.dimension * vertexCount);
+        return new Float32Array(baseBuffer, offset, channel.dimension * vertexCount);
       case spec.VertexFormatType.Int16:
-        return new Int16Array(baseBuffer, channel.offset, channel.dimension * vertexCount);
+        return new Int16Array(baseBuffer, offset, channel.dimension * vertexCount);
       case spec.VertexFormatType.Int8:
-        return new Int8Array(baseBuffer, channel.offset, channel.dimension * vertexCount);
+        return new Int8Array(baseBuffer, offset, channel.dimension * vertexCount);
       case spec.VertexFormatType.UInt16:
-        return new Uint16Array(baseBuffer, channel.offset, channel.dimension * vertexCount);
+        return new Uint16Array(baseBuffer, offset, channel.dimension * vertexCount);
       case spec.VertexFormatType.UInt8:
-        return new Uint8Array(baseBuffer, channel.offset, channel.dimension * vertexCount);
+        return new Uint8Array(baseBuffer, offset, channel.dimension * vertexCount);
       default:
         console.error(`Invalid vertex format type: ${channel.format}.`);
 
-        return new Float32Array(baseBuffer, channel.offset, channel.dimension * vertexCount);
+        return new Float32Array(baseBuffer, offset, channel.dimension * vertexCount);
     }
   }
 
@@ -595,7 +608,7 @@ const vertexBufferSemanticMap: Record<string, string> = {
   TANGENT_BS3: 'aTargetTangent3',
 };
 
-function decodeBase64ToArrays (base64String: string) {
+export function decodeBase64ToArrays (base64String: string) {
   // 将 Base64 编码的字符串转换为二进制字符串
   const binaryString = atob(base64String);
 
