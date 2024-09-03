@@ -484,9 +484,9 @@ export class ParticleMesh implements ParticleMeshData {
 
       const translation = velocity.multiply(dt / 1000);
 
-      aTranslationArray[aTranslationOffset] = translation.x;
-      aTranslationArray[aTranslationOffset + 1] = translation.y;
-      aTranslationArray[aTranslationOffset + 2] = translation.z;
+      aTranslationArray[aTranslationOffset] += translation.x;
+      aTranslationArray[aTranslationOffset + 1] += translation.y;
+      aTranslationArray[aTranslationOffset + 2] += translation.z;
     }
     this.geometry.setAttributeData('aTranslation', aTranslationArray);
 
@@ -569,7 +569,7 @@ export class ParticleMesh implements ParticleMeshData {
       return velocity;
     }
     const dt = t1 - t0; // 相对delay的时间
-    const d = this.gravityModifier.getIntegrateByTime(0, dt);
+    const d = this.gravityModifier.getIntegrateValue(0, dt, duration);
     const acc: spec.vec3 = [uAcceleration.x * d, uAcceleration.y * d, uAcceleration.z * d];
 
     // ret.addScaledVector(velData, speedIntegrate);
@@ -577,7 +577,7 @@ export class ParticleMesh implements ParticleMeshData {
     // speedIntegrate = speedOverLifetime.getIntegrateValue(0, time, duration);
     if (this.speedOverLifetime) {
     // dt / dur 归一化
-      const speed = this.speedOverLifetime.getIntegrateValue(0, dt, duration);
+      const speed = this.speedOverLifetime.getValue(dt);
 
       return velocity.multiply(speed).add(acc);
     }
