@@ -446,6 +446,8 @@ export class ParticleMesh implements ParticleMeshData {
     geometry.setIndexData(new index.constructor(0));
   }
 
+  cachedVelocity = new Vector3();
+
   onUpdate (dt: number) {
     const aPosArray = this.geometry.getAttributeData('aPos') as Float32Array; // vector3
     const aVelArray = this.geometry.getAttributeData('aVel') as Float32Array; // vector3
@@ -458,28 +460,33 @@ export class ParticleMesh implements ParticleMeshData {
     //   return;
     // }
 
-    const localTime = new Float32Array([this.time])[0];
+    const localTime = this.time;
     const particleCount = Math.ceil(aPosArray.length / 12);
 
     // calculate particle translation
     let aTranslationArray = this.geometry.getAttributeData('aTranslation') as Float32Array;
 
     if (aTranslationArray.length < particleCount * 3) {
-      aTranslationArray = new Float32Array(particleCount * 3);
+      aTranslationArray = this.expandArray(aTranslationArray, particleCount * 3);
     }
-    const velocity = new Vector3(0, 0, 0);
+    const velocity = this.cachedVelocity;
 
     for (let i = 0;i < particleCount;i++) {
       const velOffset = i * 12 + 3;
 
       velocity.set(aVelArray[velOffset], aVelArray[velOffset + 1], aVelArray[velOffset + 2]);
-
-      const trans = this.calculateTranslation(velocity, aOffsetArray[i * 4 + 2], localTime, aOffsetArray[i * 4 + 3]);
+      this.calculateTranslation(velocity, aOffsetArray[i * 4 + 2], localTime, aOffsetArray[i * 4 + 3]);
       const aTranslationOffset = i * 3;
 
-      aTranslationArray[aTranslationOffset] = trans.x;
-      aTranslationArray[aTranslationOffset + 1] = trans.y;
-      aTranslationArray[aTranslationOffset + 2] = trans.z;
+      // aVelArray[velOffset] = velocity.x;
+      // aVelArray[velOffset + 1] = velocity.y;
+      // aVelArray[velOffset + 2] = velocity.z;
+
+      const translation = velocity.multiply(dt / 1000);
+
+      aTranslationArray[aTranslationOffset] = translation.x;
+      aTranslationArray[aTranslationOffset + 1] = translation.y;
+      aTranslationArray[aTranslationOffset + 2] = translation.z;
     }
     this.geometry.setAttributeData('aTranslation', aTranslationArray);
 
@@ -490,6 +497,8 @@ export class ParticleMesh implements ParticleMeshData {
       aRotationArray = new Float32Array(particleCount * 9);
     }
 
+    // const aRotationTemp = new math.Matrix3().identity();
+
     for (let i = 0;i < particleCount;i++) {
       const time = localTime - aOffsetArray[i * 4 + 2];
       const duration = aOffsetArray[i * 4 + 3];
@@ -499,6 +508,7 @@ export class ParticleMesh implements ParticleMeshData {
       const aSeed = aSeedArray[i * 8 + 3];
 
       const aRotation = this.transformFromRotation(aRot, life, duration, aSeed);
+      // const aRotation = aRotationTemp;
       const aRotationOffset = i * 9;
 
       const matrixArray = aRotation.toArray();
@@ -515,13 +525,15 @@ export class ParticleMesh implements ParticleMeshData {
       aLinearMoveArray = new Float32Array(particleCount * 3);
     }
 
+    const linearMove = new Vector3();
+
     for (let i = 0;i < particleCount;i++) {
       const time = localTime - aOffsetArray[i * 4 + 2];
       const duration = aOffsetArray[i * 4 + 3];
       // const life = math.clamp(time / duration, 0.0, 1.0);
       const aSeed = aSeedArray[i * 8 + 3];
 
-      const linearMove = this.calLinearMov(time, duration, aSeed);
+      this.calLinearMov(time, duration, aSeed, linearMove);
       const aLinearMoveOffset = i * 3;
 
       aLinearMoveArray[aLinearMoveOffset] = linearMove.x;
@@ -529,6 +541,14 @@ export class ParticleMesh implements ParticleMeshData {
       aLinearMoveArray[aLinearMoveOffset + 2] = linearMove.z;
     }
     this.geometry.setAttributeData('aLinearMove', aLinearMoveArray);
+  }
+
+  expandArray (array: Float32Array, newSize: number): Float32Array {
+    const newArr = new Float32Array(newSize);
+
+    newArr.set(array);
+
+    return newArr;
   }
 
   minusTime (time: number) {
@@ -546,7 +566,7 @@ export class ParticleMesh implements ParticleMeshData {
     const uGravityModifierValue = this.mesh.material.getVector4('uGravityModifierValue');
 
     if (!uAcceleration || !uGravityModifierValue) {
-      return new Vector3();
+      return velocity;
     }
     const dt = t1 - t0; // 相对delay的时间
     const d = this.gravityModifier.getIntegrateByTime(0, dt);
@@ -559,10 +579,10 @@ export class ParticleMesh implements ParticleMeshData {
     // dt / dur 归一化
       const speed = this.speedOverLifetime.getIntegrateValue(0, dt, duration);
 
-      return velocity.clone().multiply(speed).add(acc);
+      return velocity.multiply(speed).add(acc);
     }
 
-    return velocity.clone().multiply(dt).add(acc);
+    return velocity.add(acc);
   }
 
   transformFromRotation (rot: Vector3, life: number, dur: number, aSeed: number): math.Matrix3 {
@@ -650,12 +670,12 @@ export class ParticleMesh implements ParticleMeshData {
     return result;
   }
 
-  calLinearMov (time: number, duration: number, aSeed: number): Vector3 {
-    const mov = new Vector3();
+  calLinearMov (time: number, duration: number, aSeed: number, res: Vector3): Vector3 {
+    const mov = res;
     const lifetime = time / duration;
 
     if (!this.linearVelOverLifetime || !this.linearVelOverLifetime.enabled) {
-      return new Vector3();
+      return mov;
     }
     if (this.linearVelOverLifetime.asMovement) {
       if (this.linearVelOverLifetime.x) {
