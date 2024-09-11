@@ -210,7 +210,7 @@ export class SpineComponent extends RendererComponent {
       }
 
     } else {
-      this.setAnimationList(activeAnimation, spineOptions.speed);
+      spineOptions.loopEnd ? this.setAnimationListLoopEnd(activeAnimation, spineOptions.speed) : this.setAnimationList(activeAnimation, spineOptions.speed);
     }
 
     this.cache = {

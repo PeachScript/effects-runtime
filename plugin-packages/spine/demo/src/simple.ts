@@ -500,10 +500,11 @@ const activeAnimation = ['run', 'jump'], skin = 'default', dur = 4, mixDuration 
           'spine': 0,
           'startSize': 5,
           'activeAnimation': [
-            '生气',
+            '生气', '大笑',
           ],
           'mixDuration': 0,
           'speed': 1,
+          'loopEnd': true,
         },
         'tracks': [
           {
