@@ -33,18 +33,20 @@ export class ActivationMixerPlayable extends Playable {
   }
 
   private hideRendererComponents (item: VFXItem) {
-    for (const rendererComponent of item.rendererComponents) {
-      if (rendererComponent.enabled) {
-        rendererComponent.enabled = false;
-      }
-    }
+    item.setVisible(false);
+    // for (const rendererComponent of item.rendererComponents) {
+    //   if (rendererComponent.enabled) {
+    //     rendererComponent.enabled = false;
+    //   }
+    // }
   }
 
   private showRendererComponents (item: VFXItem) {
-    for (const rendererComponent of item.rendererComponents) {
-      if (!rendererComponent.enabled) {
-        rendererComponent.enabled = true;
-      }
-    }
+    item.setVisible(true);
+    // for (const rendererComponent of item.rendererComponents) {
+    //   if (!rendererComponent.enabled) {
+    //     rendererComponent.enabled = true;
+    //   }
+    // }
   }
 }
