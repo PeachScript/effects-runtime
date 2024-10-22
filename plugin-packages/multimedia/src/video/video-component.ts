@@ -61,6 +61,7 @@ export class VideoComponent extends BaseRenderComponent {
       muted = false,
     } = options;
     let renderer = data.renderer;
+    console.log(options);
 
     if (!renderer) {
       renderer = {} as SpriteItemProps['renderer'];
@@ -77,6 +78,8 @@ export class VideoComponent extends BaseRenderComponent {
         this.setLoop(false);
       }
     }
+    console.log(renderer.texture);
+
 
     this.renderer = {
       renderMode: renderer.renderMode ?? spec.RenderMode.BILLBOARD,
@@ -90,6 +93,9 @@ export class VideoComponent extends BaseRenderComponent {
       order: listIndex,
       shape: renderer.shape,
     };
+
+    console.log('video',this.video);
+
 
     this.interaction = interaction;
     this.pauseVideo();
