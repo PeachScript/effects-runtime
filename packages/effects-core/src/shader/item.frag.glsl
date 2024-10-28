@@ -3,8 +3,10 @@ precision highp float;
 varying vec4 vColor;
 varying vec2 vTexCoord;//x y
 varying vec3 vParams;//texIndex mulAplha transparentOcclusion
+varying vec2 vMaskTexCoord;
 
 uniform sampler2D uSampler0;
+uniform sampler2D uMaskTex;
 
 vec4 blendColor(vec4 color, vec4 vc, float mode) {
   vec4 ret = color * vc;
@@ -25,7 +27,9 @@ vec4 blendColor(vec4 color, vec4 vc, float mode) {
 void main() {
   vec4 color = vec4(0.);
   vec4 texColor = texture2D(uSampler0, vTexCoord.xy);
+//  vec4 maskColor = texture2D(uMaskTex, vMaskTexCoord.xy);
   color = blendColor(texColor, vColor, floor(0.5 + vParams.y));
+//  color = texColor * maskColor.a;
   if(vParams.z == 0. && color.a < 0.04) { // 1/256 = 0.04
     discard;
   }

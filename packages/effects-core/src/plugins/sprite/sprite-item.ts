@@ -6,7 +6,8 @@ import { effectsClass } from '../../decorators';
 import type { Engine } from '../../engine';
 import { glContext } from '../../gl';
 import type { MaterialProps } from '../../material';
-import { Material, getPreMultiAlpha, setBlendMode, setMaskMode, setSideMode } from '../../material';
+import { setBlendMode } from '../../material';
+import { Material, getPreMultiAlpha, setMaskMode, setSideMode } from '../../material';
 import type { ValueGetter } from '../../math';
 import { createValueGetter, trianglesFromRect, vecFill, vecMulCombine } from '../../math';
 import type { GeometryDrawMode, Renderer } from '../../render';
@@ -222,6 +223,18 @@ export class SpriteComponent extends RendererComponent {
     }
   }
 
+  setMaskConfig () {
+    if (this.item.name === '圈') {
+      const maskItem = this.item.composition?.getItemByName('框')?.getComponent(SpriteComponent);
+      // const textOffset = maskItem!.geometry.getAttributeData('atlasOffset') as TypedArray;
+
+      // this.geometry.setAttributeData('maskAtlasOffset', textOffset);
+      this.material.setTexture('uMaskTex', maskItem!.renderer.texture);
+    } else {
+      this.material.setTexture('uMaskTex', this.emptyTexture);
+    }
+  }
+
   /**
    * 设置当前 Mesh 的可见性。
    * @param visible - true：可见，false：不可见
@@ -257,6 +270,10 @@ export class SpriteComponent extends RendererComponent {
     this.material.setTexture('uSampler0', texture);
   }
 
+  setMaskTexture (texture: Texture) {
+    this.material.setTexture('uMaskTex', texture);
+  }
+
   /**
    * @internal
    */
@@ -281,6 +298,7 @@ export class SpriteComponent extends RendererComponent {
 
   override start (): void {
     this.item.getHitTestParams = this.getHitTestParams;
+    // this.setMaskConfig();
   }
 
   override update (dt: number): void {
@@ -375,12 +393,11 @@ export class SpriteComponent extends RendererComponent {
 
   private setItem () {
     const textures: Texture[] = [];
-    let texture = this.renderer.texture;
+    const texture = this.renderer.texture;
 
     if (texture) {
       addItem(textures, texture);
     }
-    texture = this.renderer.texture;
     const data = this.getItemInitData();
 
     const renderer = this.renderer;
@@ -439,6 +456,18 @@ export class SpriteComponent extends RendererComponent {
           releasable: true,
           type: glContext.FLOAT,
           data: new Float32Array(0),
+        },
+        maskAtlasOffset: {
+          size: 2,
+          offset: 0,
+          releasable: true,
+          type: glContext.FLOAT,
+          data: new Float32Array([
+            0, 1,
+            0, 0,
+            1, 1,
+            1, 0,
+          ]),
         },
       },
       indices: { data: new Uint16Array(0), releasable: true },
