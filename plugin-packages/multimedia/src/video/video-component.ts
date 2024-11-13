@@ -234,7 +234,9 @@ export class VideoComponent extends BaseRenderComponent {
   }
 
   override onDestroy (): void {
-    super.onDestroy();
+    if (this.item.composition?.renderer.env !== 'editor') {
+      super.onDestroy();
+    }
 
     if (this.video) {
       this.video.pause();
