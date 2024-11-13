@@ -238,8 +238,8 @@ export class VideoComponent extends BaseRenderComponent {
 
     if (this.video) {
       this.video.pause();
-      this.video.src = '';
-      this.video.load();
+      this.setCurrentTime(0);
+      this.video = undefined;
     }
   }
 
