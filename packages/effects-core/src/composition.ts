@@ -657,6 +657,12 @@ export class Composition extends EventEmitter<CompositionEvent<Composition>> imp
 
     // 视频固定30帧更新
     if (now - this.lastVideoUpdateTime > 33) {
+      if (this.renderer.env === 'editor') {
+        this.compositionSourceManager.jsonScene?.images.forEach((img, index) => {
+          //@ts-expect-error
+          img?.uploadCurrentVideoFrame();
+        });
+      }
       (this.textures ?? []).forEach(tex => tex?.uploadCurrentVideoFrame());
       this.lastVideoUpdateTime = now;
     }
