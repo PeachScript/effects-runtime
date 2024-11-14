@@ -220,8 +220,7 @@ export class VideoComponent extends BaseRenderComponent {
   }
 
   private playVideo (): void {
-    if (this.video) {
-      if (!this.video.paused) { return; }
+    if (this.video && this.video.paused) {
       this.video.play().catch(error => {
         this.engine.renderErrors.add(error);
       });
