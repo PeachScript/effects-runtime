@@ -68,7 +68,7 @@ export class VFXItemInspector extends ObjectInspector {
       if (ImGui.CollapsingHeader(componet.constructor.name, ImGui.TreeNodeFlags.DefaultOpen)) {
         ImGui.Text('Enabled');
         ImGui.SameLine(alignWidth);
-        ImGui.Checkbox('##Enabled', (_ = componet.enabled) => {
+        ImGui.Checkbox('##Enabled' + componet.constructor.name, (_ = componet.enabled) => {
           componet.enabled = _;
 
           return componet.enabled;
