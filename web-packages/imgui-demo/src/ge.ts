@@ -1,4 +1,5 @@
 import type { MaterialProps, Renderer } from '@galacean/effects';
+import { spec } from '@galacean/effects';
 import { GLSLVersion, Geometry, Material, OrderType, Player, PostProcessVolume, RenderPass, RenderPassPriorityPostprocess, RendererComponent, VFXItem, glContext, math } from '@galacean/effects';
 import '@galacean/effects-plugin-model';
 import { JSONConverter } from '@galacean/effects-plugin-model';
@@ -7,6 +8,161 @@ import '@galacean/effects-plugin-spine';
 import { Selection } from './core/selection';
 import { ImGui_Impl } from './imgui';
 import { AssetDatabase } from './core/asset-data-base';
+
+const vertex = `precision highp float;
+
+attribute vec3 aPos;
+attribute vec2 aUV;
+
+varying vec2 uv;
+varying vec3 worldPos;
+varying vec3 modelPos;
+varying vec3 normal;
+
+uniform mat4 effects_ObjectToWorld;
+uniform mat4 effects_MatrixVP;
+
+void main() {
+    uv = aUV;
+    vec4 pos = effects_ObjectToWorld * vec4(aPos, 1);
+    worldPos = pos.xyz / pos.w;
+    modelPos = aPos;
+    vec4 worldNormal = effects_ObjectToWorld * vec4(0, 0, 1, 0);
+    normal = worldNormal.xyz;
+    gl_Position = effects_MatrixVP * effects_ObjectToWorld * vec4(aPos, 1.0);
+}`;
+
+const fragment = `precision highp float;
+
+// Inputs from vertex shader
+varying vec3 worldPos;        // Fragment position in world space or object space
+varying vec2 uv;      // Texture coordinates
+varying vec3 modelPos;
+varying vec3 normal;
+
+// Uniforms
+uniform sampler2D _MainTex; // Normal map texture
+uniform sampler2D _DepthTex; // Normal map texture
+uniform vec3 effects_WorldSpaceCameraPos;
+uniform float _HeightScale;
+uniform float _SpecularIntensity;
+
+// Function to construct the TBN matrix without an explicit tangent input
+mat3 calculateTBN(vec3 normal,vec3 pos, vec2 texCoords) {
+    // Calculate tangent and bitangent vectors
+    vec3 dp1 = dFdx(pos);
+    vec3 dp2 = dFdy(pos);
+    vec2 duv1 = dFdx(texCoords);
+    vec2 duv2 = dFdy(texCoords);
+
+    // Calculate the determinant of the 2x2 matrix for the tangent computation
+    float determinant = duv1.x * duv2.y - duv1.y * duv2.x;
+
+    // Handle the case where the determinant is too close to zero
+    if(determinant == 0.0) {
+        determinant = 1.0;
+    }
+
+    float invDeterminant = 1.0 / determinant;
+
+    // Compute tangent and bitangent
+    vec3 tangent = normalize((duv2.y * dp1 - duv1.y * dp2) * invDeterminant);
+    vec3 bitangent = normalize((duv1.x * dp2 - duv2.x * dp1) * invDeterminant);
+
+    // Reorthogonalize tangent to ensure orthogonality of TBN matrix
+    tangent = normalize(tangent - dot(tangent, normal) * normal);
+
+    // Construct the TBN matrix
+    return mat3(tangent, bitangent, normal);
+}
+
+vec2 ParallaxMapping(vec2 texCoords, vec3 viewDir)
+{ 
+    // number of depth layers
+    const float numLayers = 100.0;
+    // calculate the size of each layer
+    float layerDepth = 1.0 / numLayers;
+    // depth of current layer
+    float currentLayerDepth = 0.0;
+    // the amount to shift the texture coordinates per layer (from vector P)
+    vec2 P = viewDir.xy * _HeightScale; 
+    vec2 deltaTexCoords = P / numLayers;
+
+    // get initial values
+    vec2  currentTexCoords     = texCoords;
+    float currentDepthMapValue = 1.0 - texture(_DepthTex, currentTexCoords).r;
+
+    while(currentLayerDepth < currentDepthMapValue)
+    {
+      // shift texture coordinates along direction of P
+      currentTexCoords -= deltaTexCoords;
+      // get depthmap value at current texture coordinates
+      currentDepthMapValue = 1.0 - texture(_DepthTex, currentTexCoords).r;  
+      // get depth of next layer
+      currentLayerDepth += layerDepth;  
+    }
+
+    // get texture coordinates before collision (reverse operations)
+    vec2 prevTexCoords = currentTexCoords + deltaTexCoords;
+
+    // get depth after and before collision for linear interpolation
+    float afterDepth  = currentDepthMapValue - currentLayerDepth;
+    float beforeDepth = 1.0 - texture(_DepthTex, prevTexCoords).r - currentLayerDepth + layerDepth;
+
+    // interpolation of texture coordinates
+    float weight = afterDepth / (afterDepth - beforeDepth);
+    vec2 finalTexCoords = prevTexCoords * weight + currentTexCoords * (1.0 - weight);
+
+    return finalTexCoords;
+
+    // return currentTexCoords;
+    // return texCoords - p;    
+}
+
+void main() {
+    // // Calculate the TBN matrix
+    // mat3 TBN = transpose(calculateTBN(normal, worldPos, uv));
+
+    // vec3 tangentViewPos = TBN * effects_WorldSpaceCameraPos;
+    // vec3 tangentFragPos = TBN * worldPos;
+
+    // // Offset texture coordinates with Parallax Mapping
+    // vec3 viewDir   = normalize(tangentViewPos - tangentFragPos);
+    // vec2 texCoords = ParallaxMapping(uv,  viewDir);
+    // if(texCoords.x > 1.0 || texCoords.y > 1.0 || texCoords.x < 0.0 || texCoords.y < 0.0){
+    //   discard;
+    // }
+
+    // // // then sample textures with new texture coords
+    // vec3 diffuse = texture(_MainTex, texCoords).rgb;
+
+
+    vec3 worldViewDir = effects_WorldSpaceCameraPos - worldPos;
+    vec3 reflectDir = normalize(reflect(worldViewDir, normal));
+
+    vec3 diffuse = texture(_MainTex, uv).rgb;
+    vec3 specular = texture(_DepthTex, reflectDir.xz).rgb * _SpecularIntensity;
+
+    vec3 color = diffuse + specular;
+
+    gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+const properties = `_MainTex("MainTex", 2D) = "white" {}
+_DepthTex("DepthTex", 2D) = "white" {}
+_SpecularIntensity("SpecularIntensity", Float) = 0.1
+_HeightScale("HeightScale", Float) = 0.1
+_Test("Test", Float) = 0.1
+`;
+
+const shader: spec.ShaderData = {
+  vertex,
+  fragment,
+  properties,
+  id: '90ed7bbc1c364b3097b502b4a0f13d5b',
+  dataType:spec.DataType.Shader,
+};
 
 export class GalaceanEffects {
   static player: Player;
@@ -79,7 +235,7 @@ export class GalaceanEffects {
           'item': {
             'id': '3f40a594b3f34d10b963ad4fc736e505',
           },
-          'dataType': 'ShapeComponent',
+          'dataType': 'EffectComponent',
           'geometry': {
             'id': '78cc7d2350bb417bb5dc93afab243411',
           },
@@ -197,14 +353,7 @@ export class GalaceanEffects {
         },
       ],
       'shaders': [
-        {
-          'id': '90ed7bbc1c364b3097b502b4a0f13d5b',
-          'name': 'unlit',
-          'dataType': 'Shader',
-          'vertex': 'precision highp float;attribute vec3 aPos;attribute vec2 aUV;varying vec2 uv;uniform mat4 effects_ObjectToWorld;uniform mat4 effects_MatrixInvV;uniform mat4 effects_MatrixVP;void main(){uv=aUV;gl_Position=effects_MatrixVP*effects_ObjectToWorld*vec4(aPos,1.0);}',
-          'fragment': 'precision highp float;varying vec2 uv;uniform vec4 _MainColor;uniform sampler2D _MainTex;uniform sampler2D _Tex2;uniform sampler2D _Tex3;void main(){vec4 texColor=texture2D(_MainTex,uv).rgba;vec4 color=texColor*_MainColor.rgba;gl_FragColor=vec4(color);}',
-          'properties': '_MainTex("MainTex", 2D) = "white" {}\n_MainColor("MainColor", Color) = (1,1,1,1)',
-        },
+        shader,
       ],
       'bins': [],
       'textures': [],
@@ -235,265 +384,7 @@ export class GalaceanEffects {
     GalaceanEffects.assetDataBase = new AssetDatabase(GalaceanEffects.player.renderer.engine);
     GalaceanEffects.player.renderer.engine.database = GalaceanEffects.assetDataBase;
     //@ts-expect-error
-    GalaceanEffects.playURL({
-      'playerVersion': {
-        'web': '2.0.4',
-        'native': '0.0.1.202311221223',
-      },
-      'images': [],
-      'fonts': [],
-      'version': '3.0',
-      'shapes': [],
-      'plugins': [],
-      'type': 'ge',
-      'compositions': [
-        {
-          'id': '1',
-          'name': '新建合成1',
-          'duration': 6,
-          'startTime': 0,
-          'endBehavior': 4,
-          'previewSize': [
-            750,
-            1624,
-          ],
-          'items': [
-            {
-              'id': '21135ac68dfc49bcb2bc7552cbb9ad07',
-            },
-          ],
-          'camera': {
-            'fov': 60,
-            'far': 40,
-            'near': 0.1,
-            'clipMode': 1,
-            'position': [
-              0,
-              0,
-              8,
-            ],
-            'rotation': [
-              0,
-              0,
-              0,
-            ],
-          },
-          'sceneBindings': [
-            {
-              'key': {
-                'id': 'f8a6089ed7794f479907ed0bcac17220',
-              },
-              'value': {
-                'id': '21135ac68dfc49bcb2bc7552cbb9ad07',
-              },
-            },
-          ],
-          'timelineAsset': {
-            'id': 'dd50ad0de3f044a5819576175acf05f7',
-          },
-        },
-      ],
-      'components': [
-        {
-          'id': 'b7890caa354a4c279ff9678c5530cd83',
-          'item': {
-            'id': '21135ac68dfc49bcb2bc7552cbb9ad07',
-          },
-          'dataType': 'ShapeComponent',
-          'type': 0,
-          'points': [
-            {
-              'x': -1,
-              'y': -1,
-              'z': 0,
-            },
-            {
-              'x': 1,
-              'y': -1,
-              'z': 0,
-            },
-            {
-              'x': 0,
-              'y': 1,
-              'z': 0,
-            },
-          ],
-          'easingIns': [
-            {
-              'x': -1,
-              'y': -0.5,
-              'z': 0,
-            },
-            {
-              'x': 0.5,
-              'y': -1.5,
-              'z': 0,
-            },
-            {
-              'x': 0.5,
-              'y': 1,
-              'z': 0,
-            },
-          ],
-          'easingOuts': [
-            {
-              'x': -0.5,
-              'y': -1.5,
-              'z': 0,
-            },
-            {
-              'x': 1,
-              'y': -0.5,
-              'z': 0,
-            },
-            {
-              'x': -0.5,
-              'y': 1,
-              'z': 0,
-            },
-          ],
-          'shapes': [
-            {
-              'verticalToPlane': 'z',
-              'indexes': [
-                {
-                  'point': 0,
-                  'easingIn': 0,
-                  'easingOut': 0,
-                },
-                {
-                  'point': 1,
-                  'easingIn': 1,
-                  'easingOut': 1,
-                },
-                {
-                  'point': 2,
-                  'easingIn': 2,
-                  'easingOut': 2,
-                },
-              ],
-              'close': true,
-              'fill': {
-                'color': { 'r': 1, 'g': 0.7, 'b': 0.5, 'a': 1 },
-              },
-            },
-          ],
-          'renderer': {
-            'renderMode': 1,
-          },
-        },
-      ],
-      'geometries': [],
-      'materials': [],
-      'items': [
-        {
-          'id': '21135ac68dfc49bcb2bc7552cbb9ad07',
-          'name': 'sprite_1',
-          'duration': 5,
-          'type': '1',
-          'visible': true,
-          'endBehavior': 0,
-          'delay': 0,
-          'renderLevel': 'B+',
-          'components': [
-            {
-              'id': 'b7890caa354a4c279ff9678c5530cd83',
-            },
-          ],
-          'transform': {
-            'position': {
-              'x': 0,
-              'y': 0,
-              'z': 0,
-            },
-            'eulerHint': {
-              'x': 0,
-              'y': 0,
-              'z': 0,
-            },
-            'anchor': {
-              'x': 0,
-              'y': 0,
-            },
-            'size': {
-              'x': 1.2,
-              'y': 1.2,
-            },
-            'scale': {
-              'x': 1,
-              'y': 1,
-              'z': 1,
-            },
-          },
-          'dataType': 'VFXItemData',
-        },
-      ],
-      'shaders': [],
-      'bins': [],
-      'textures': [],
-      'animations': [],
-      'miscs': [
-        {
-          'id': 'dd50ad0de3f044a5819576175acf05f7',
-          'dataType': 'TimelineAsset',
-          'tracks': [
-          ],
-        },
-        {
-          'id': '51ed062462544526998daf514c320854',
-          'dataType': 'ActivationPlayableAsset',
-        },
-        {
-          'id': '9fd3412cf92c4dc19a2deabb942dadb2',
-          'dataType': 'TransformPlayableAsset',
-          'positionOverLifetime': {},
-        },
-        {
-          'id': 'a59a15a3f3b4414abb81217733561926',
-          'dataType': 'ActivationTrack',
-          'children': [],
-          'clips': [
-            {
-              'start': 0,
-              'duration': 5,
-              'endBehavior': 0,
-              'asset': {
-                'id': '51ed062462544526998daf514c320854',
-              },
-            },
-          ],
-        },
-        {
-          'id': '9436a285d586414ab72622f64b11f54d',
-          'dataType': 'TransformTrack',
-          'children': [],
-          'clips': [
-            {
-              'start': 0,
-              'duration': 5,
-              'endBehavior': 0,
-              'asset': {
-                'id': '9fd3412cf92c4dc19a2deabb942dadb2',
-              },
-            },
-          ],
-        },
-        {
-          'id': 'f8a6089ed7794f479907ed0bcac17220',
-          'dataType': 'ObjectBindingTrack',
-          'children': [
-            {
-              'id': 'a59a15a3f3b4414abb81217733561926',
-            },
-            {
-              'id': '9436a285d586414ab72622f64b11f54d',
-            },
-          ],
-          'clips': [],
-        },
-      ],
-      'compositionId': '1',
-    });
+    GalaceanEffects.playURL(json);
   }
 
   static playURL (url: string, use3DConverter = false) {
